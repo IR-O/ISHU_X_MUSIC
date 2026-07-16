@@ -14,7 +14,9 @@ from ishu import (
     yt,
     thumb,
 )
-from ishu import scheduler
+# scheduler is a module; pull the Scheduler *instance* (with .start()/.stop())
+# that it defines at module level, not the module object itself.
+from ishu.scheduler import scheduler
 
 from ishu.plugins import all_modules
 
