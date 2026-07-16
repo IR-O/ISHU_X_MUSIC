@@ -7,7 +7,7 @@ import re
 
 from pyrogram import enums, types
 
-from ishu import app
+from ishu import app, config, logger
 
 
 class Utilities:
