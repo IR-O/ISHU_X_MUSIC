@@ -15,7 +15,7 @@ from pytgcalls import PyTgCalls, exceptions, types
 from pytgcalls.pytgcalls_session import PyTgCallsSession
 
 from ishu import (app, config, db, lang, logger,
-                   queue, thumb, userbot, yt)
+                   queue, thumb, userbot, yt, utils)
 from ishu.helpers import Media, Track, buttons
 
 
@@ -209,18 +209,23 @@ class TgCall(PyTgCalls):
                 media.message_id = message.id
 
         except FileNotFoundError:
+            await utils.error_log(f"{chat_id}:play_media[{media.id}]", "FileNotFoundError (source gone)")
             await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
             await self.play_next(chat_id)
         except exceptions.NoActiveGroupCall:
+            await utils.error_log(f"{chat_id}:play_media", "NoActiveGroupCall")
             await self.stop(chat_id)
             await message.edit_text(_lang["error_no_call"])
         except exceptions.NoAudioSourceFound:
+            await utils.error_log(f"{chat_id}:play_media[{media.id}]", "NoAudioSourceFound")
             await message.edit_text(_lang["error_no_audio"])
             await self.play_next(chat_id)
-        except (ConnectionError, ConnectionNotFound, TelegramServerError):
+        except (ConnectionError, ConnectionNotFound, TelegramServerError) as e:
+            await utils.error_log(f"{chat_id}:play_media", e)
             await self.stop(chat_id)
             await message.edit_text(_lang["error_tg_server"])
         except RTMPStreamingUnsupported:
+            await utils.error_log(f"{chat_id}:play_media", "RTMPStreamingUnsupported")
             await self.stop(chat_id)
             await message.edit_text(_lang["error_rtmp"])
 
@@ -390,6 +395,9 @@ class TgCall(PyTgCalls):
                             logger.warning(
                                 "Auto-reconnect failed for %s: %s",
                                 update.chat_id, e,
+                            )
+                            await utils.error_log(
+                                f"{update.chat_id}:auto_reconnect[{media.id}]", e
                             )
                     await self.stop(update.chat_id)
 

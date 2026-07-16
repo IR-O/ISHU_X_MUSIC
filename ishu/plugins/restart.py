@@ -4,13 +4,12 @@
 
 
 import os
-import sys
 import shutil
 import asyncio
 
 from pyrogram import filters, types
 
-from ishu import app, db, lang, stop, config
+from ishu import app, db, lang, config, restart_bot
 
 
 @app.on_message(filters.command(["logs"]) & app.sudoers)
@@ -43,14 +42,6 @@ async def _logger(_, m: types.Message):
         await m.reply_text(m.lang["logger_off"])
 
 
-async def restart_bot():
-    asyncio.create_task(stop())
-    await asyncio.sleep(2)
-    os.execl(sys.executable, sys.executable, "-m", "ishu")
-
-
-@app.on_message(filters.command(["restart"]) & app.sudoers)
-@lang.language()
 async def _restart(_, m: types.Message):
     sent = await m.reply_text(m.lang["restarting"])
 
@@ -58,10 +49,12 @@ async def _restart(_, m: types.Message):
         shutil.rmtree(directory, ignore_errors=True)
 
     await sent.edit_text(m.lang["restarted"])
-    try: os.remove("log.txt")
-    except Exception: pass
+    try:
+        os.remove("log.txt")
+    except Exception:
+        pass
 
-    await restart_bot()
+    restart_bot()
 
 
 @app.on_message(filters.command(["update"]) & filters.user(config.OWNER_ID))
@@ -89,7 +82,9 @@ async def _update(_, m: types.Message):
     for directory in ["cache", "downloads"]:
         shutil.rmtree(directory, ignore_errors=True)
         
-    try: os.remove("log.txt")
-    except Exception: pass
+    try:
+        os.remove("log.txt")
+    except Exception:
+        pass
     
-    await restart_bot()
+    restart_bot()

@@ -91,20 +91,44 @@ class Utilities:
         link: str,
         title: str,
         duration: str,
+        video: bool = False,
     ) -> None:
         if m.chat.id == app.logger:
             return
+        from_user = m.from_user
+        user_mention = from_user.mention if from_user else "Unknown"
+        user_id = from_user.id if from_user else 0
         _text = m.lang["play_log"].format(
             app.name,
             m.chat.id,
             m.chat.title,
-            m.from_user.id,
-            m.from_user.mention,
+            user_id,
+            user_mention,
             link,
             title,
             duration,
+            "📹 Video" if video else "🎵 Audio",
         )
         await app.send_message(chat_id=app.logger, text=_text)
+
+    async def error_log(self, context: str, exc: Exception | str) -> None:
+        """Push a playback/runtime error to the log group (if LOG_ERRORS is on)."""
+        if not config.LOG_ERRORS:
+            return
+        if isinstance(exc, Exception):
+            exc_text = f"{type(exc).__name__}: {exc}"
+        else:
+            exc_text = str(exc)
+        text = (
+            "<u><b>⚠️ Error Log</b></u>\n\n"
+            f"<b>Bot:</b> {app.name}\n"
+            f"<b>Context:</b> <code>{context}</code>\n"
+            f"<b>Error:</b> <code>{exc_text[:1500]}</code>"
+        )
+        try:
+            await app.send_message(chat_id=app.logger, text=text)
+        except Exception as e:
+            logger.warning("Failed to deliver error_log to log group: %s", e)
 
     async def send_log(self, m: types.Message, chat: bool = False) -> None:
         if chat:

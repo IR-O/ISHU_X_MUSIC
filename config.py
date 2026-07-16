@@ -41,7 +41,24 @@ class Config:
         
         self.AUTO_LEAVE: bool = getenv("AUTO_LEAVE", "False").lower() == "true"
         self.AUTO_END: bool = getenv("AUTO_END", "False").lower() == "true"
-    
+
+        # ── Daily restart + cleanup (keep playback fast, clear stale URLs) ──
+        # Bot does a clean self-restart once per day at this local hour:minute
+        # (24h clock). Clearing cache/ + downloads/ every day drops the stale
+        # googlevideo URLs and disk clutter that make the bot slow over time.
+        # Default 03:00 (3 AM). Disable with RESTART_HOUR=-1.
+        self.RESTART_HOUR = int(getenv("RESTART_HOUR", "3"))
+        self.RESTART_MIN = int(getenv("RESTART_MIN", "0"))
+
+        # Periodic prune of cache/ + downloads/ so accumulated files don't slow
+        # the bot down. Interval = how often to scan (minutes, default 60).
+        # MAX_AGE = delete files older than this many minutes (default 90).
+        self.CLEANUP_INTERVAL: int = int(getenv("CLEANUP_INTERVAL", "60")) * 60
+        self.CLEANUP_MAX_AGE: int = int(getenv("CLEANUP_MAX_AGE", "90")) * 60
+
+        # Forward playback errors to the log group (True/False, default True)
+        self.LOG_ERRORS: bool = getenv("LOG_ERRORS", "True").lower() == "true"
+
         self.THUMB_GEN: bool = getenv("THUMB_GEN", "True").lower() == "true"
         self.VIDEO_PLAY: bool = getenv("VIDEO_PLAY", "True").lower() == "true"
 

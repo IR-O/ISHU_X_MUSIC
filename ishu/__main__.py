@@ -14,6 +14,7 @@ from ishu import (
     yt,
     thumb,
 )
+from ishu import scheduler
 
 from ishu.plugins import all_modules
 
@@ -57,7 +58,11 @@ async def main():
 
     logger.info(f"Loaded {len(app.sudoers)} sudo users.")
 
+    # Daily auto-restart (03:00) + periodic cleanup so the bot stays fast.
+    await scheduler.start()
+
     await idle()
+    await scheduler.stop()
     await stop()
 
 

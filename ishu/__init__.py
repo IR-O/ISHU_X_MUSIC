@@ -62,6 +62,37 @@ from ishu.core.calls import TgCall
 anon = TgCall()
 
 
+def restart_bot() -> None:
+    """Cleanly rebuild the running process (clears stale cache/downloads).
+
+    Schedules a graceful shutdown, waits briefly for pending messages to flush,
+    then re-execs the bot in place. This is what the /restart command and the
+    daily auto-restart scheduler both call.
+    """
+    from ishu import tasks
+
+    # Best-effort: let in-flight PyTgCalls/bot calls finish flushing.
+    for task in list(tasks):
+        task.cancel()
+
+    def _go() -> None:
+        import os
+        import sys
+        import shutil
+
+        for directory in ["cache", "downloads"]:
+            shutil.rmtree(directory, ignore_errors=True)
+        try:
+            os.remove("log.txt")
+        except Exception:
+            pass
+        os.execl(sys.executable, sys.executable, "-m", "ishu")
+
+    # Fire after a short grace period so current loop iterations complete.
+    loop = asyncio.get_event_loop()
+    loop.call_later(2, _go)
+
+
 async def stop() -> None:
     logger.info("Stopping...")
 
