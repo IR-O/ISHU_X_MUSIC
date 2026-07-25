@@ -1,1 +1,1 @@
-python3 -m ishu
+uv run python3 -m ishu
