@@ -32,8 +32,8 @@ class Config:
         # Falls back to Railway proxy if RAILWAY_YT_API_URL/KEY are also set.
         # NOTE: the old default Railway 824b key is dead (403); set the EC2 URL
         # here and provide the real key via RAILWAY_YT_API_KEY env var.
-        self.RAILWAY_YT_API_URL = getenv("RAILWAY_YT_API_URL", "http://13.61.0.2:8000")
-        self.RAILWAY_YT_API_KEY = getenv("RAILWAY_YT_API_KEY", "")
+        self.RAILWAY_YT_API_URL = getenv("RAILWAY_YT_API_URL", "https://lily-api-29cd509a5b58.herokuapp.com")
+        self.RAILWAY_YT_API_KEY = getenv("RAILWAY_YT_API_KEY", "Lily-7Xg4DjJQMfOe3ajGJCtCZZi__6bj4gPByPqoPT9p_sc")
 
         # Shruti API — Primary download source (get key from @SHRUTIAPIBOT)
         self.SHRUTI_API_URL = getenv("SHRUTI_API_URL", "http://api01.shrutibots.site")
