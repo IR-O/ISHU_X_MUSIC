@@ -30,8 +30,8 @@ RUN curl -fsSL https://deno.land/install.sh | sh \
 RUN deno --version
 
 # Install uv (fast Python package manager)
-RUN curl -Ls https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.local/bin:${PATH}"
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
 
 # Copy dependency spec and install Python deps first (layer caching)
 COPY pyproject.toml ./
