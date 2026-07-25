@@ -949,10 +949,14 @@ class YouTube:
                 # so YouTube never returns 'related_videos'. Use a normal
                 # extract (player-client bypass from _with_js_runtime helps
                 # dodge the bot-check) so the up-next list is populated.
-                with yt_dlp.YoutubeDL(_with_js_runtime({
+                opts = {
                     "quiet": True,
                     "no_warnings": True,
-                })) as ydl:
+                }
+                cookie = cookie_txt_file()
+                if cookie and os.environ.get("ALLOW_COOKIE_DOWNLOAD"):
+                    opts["cookiefile"] = cookie
+                with yt_dlp.YoutubeDL(_with_js_runtime(opts)) as ydl:
                     info = ydl.extract_info(link, download=False) or {}
                 rel = info.get("related_videos") or []
                 # Skip the finished video itself and any playlist/mix/channel

@@ -265,11 +265,19 @@ class TgCall(PyTgCalls):
                 track = None
         if not track and last_title:
             query = last_title.split("|")[0].split("(")[0].strip()
-            # search() already appends "official audio" and filters
-            # remixes/covers, so do NOT double-append it here — passing the
-            # raw title is what keeps the fallback from re-returning the same
-            # song as `last`.
-            track = await yt.search(query, msg.id, video=False)
+            # Try to query related/radio tracks to avoid pulling the same song
+            track = await yt.search(f"{query} related", msg.id, video=False)
+            if track and track.id == last_id:
+                track = None
+            if not track:
+                track = await yt.search(f"{query} radio", msg.id, video=False)
+                if track and track.id == last_id:
+                    track = None
+            if not track:
+                # Absolute fallback: try standard search but still enforce different ID
+                track = await yt.search(query, msg.id, video=False)
+                if track and track.id == last_id:
+                    track = None
         if not track:
             return await self.stop(chat_id)
 
