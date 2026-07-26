@@ -1,0 +1,13 @@
+{
+  "name": "ishu-music-bot",
+  "version": "1.0.0",
+  "description": "YouTube PO Token generator",
+  "dependencies": {
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "puppeteer": "^23.0.0"
+  },
+  "scripts": {
+    "postinstall": "node -e \"try{require('puppeteer');}catch(e){console.log('Puppeteer installed');}\""
+  }
+}
