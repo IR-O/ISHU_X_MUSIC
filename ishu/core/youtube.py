@@ -1,4 +1,4 @@
-# ishu/youtube.py - ERROR FREE WITH COOKIES
+# ishu/youtube.py - COMPLETE FIXED VERSION
 import asyncio
 import os
 import re
@@ -56,39 +56,6 @@ def cookie_txt_file():
         return primary
     return None
 
-# ── Fast yt-dlp Options ──────────────────────────────────────────────
-def _with_js_runtime(opts):
-    out = dict(opts)
-    out["js_runtimes"] = JS_RUNTIMES
-    out["socket_timeout"] = 8
-    out["retries"] = 2
-    out["sleep_interval"] = 0.5
-    out["user_agent"] = "Mozilla/5.0 (Linux; Android 14; SM-S921B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
-    
-    use_cookies = os.environ.get("ALLOW_COOKIE_DOWNLOAD") == "1"
-    
-    if use_cookies:
-        out["extractor_args"] = {
-            "youtube": {
-                "player_client": ["mweb"],
-                "player_skip": ["webpage", "configs"],
-                "skip": ["hls", "dash"]
-            }
-        }
-    else:
-        out["extractor_args"] = {
-            "youtube": {
-                "player_client": ["tv", "ios", "android"],
-                "player_skip": ["webpage", "configs"],
-                "skip": ["hls", "dash"]
-            }
-        }
-    
-    proxy = os.environ.get("YTDLP_PROXY")
-    if proxy:
-        out["proxy"] = proxy
-    return out
-
 # ── Format Duration (FIXED) ──────────────────────────────────────────
 def _format_duration(seconds):
     try:
@@ -127,15 +94,127 @@ def _extract_video_id(link):
         return cleaned.split("youtu.be/")[-1].split("?")[0].split("&")[0]
     return cleaned if len(cleaned) == 11 else None
 
-# ── Fast Stream URL ──────────────────────────────────────────────────
+# ── Fast yt-dlp Options ──────────────────────────────────────────────
+def _with_js_runtime(opts):
+    out = dict(opts)
+    out["js_runtimes"] = JS_RUNTIMES
+    out["socket_timeout"] = 15  # Increased timeout
+    out["retries"] = 3
+    out["sleep_interval"] = 1
+    out["user_agent"] = "Mozilla/5.0 (Linux; Android 14; SM-S921B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
+    
+    use_cookies = os.environ.get("ALLOW_COOKIE_DOWNLOAD") == "1"
+    if use_cookies:
+        out["extractor_args"] = {
+            "youtube": {
+                "player_client": ["mweb", "tv"],
+                "player_skip": ["webpage", "configs"],
+                "skip": ["hls", "dash"]
+            }
+        }
+    else:
+        out["extractor_args"] = {
+            "youtube": {
+                "player_client": ["tv", "ios", "android"],
+                "player_skip": ["webpage", "configs"],
+                "skip": ["hls", "dash"]
+            }
+        }
+    
+    proxy = os.environ.get("YTDLP_PROXY")
+    if proxy:
+        out["proxy"] = proxy
+    return out
+
+# ── Fallback Functions ──────────────────────────────────────────────
+
+async def _shruti_fallback(video_id: str, video: bool = False) -> str | None:
+    """Fallback 1: SHRUTI API"""
+    if not SHRUTI_API_KEY:
+        return None
+    
+    media_type = "video" if video else "audio"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{SHRUTI_API_URL}/download",
+                params={"url": video_id, "type": media_type, "api_key": SHRUTI_API_KEY},
+                timeout=aiohttp.ClientTimeout(total=8),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    url = data.get("url") or data.get("stream_url")
+                    if url:
+                        logger.info(f"✅ SHRUTI fallback: {video_id}")
+                        return url
+    except Exception as e:
+        logger.warning(f"SHRUTI API error: {e}")
+    return None
+
+async def _railway_fallback(video_id: str, video: bool = False) -> str | None:
+    """Fallback 2: Railway API"""
+    if not RAILWAY_YT_API_URL or not RAILWAY_YT_API_KEY:
+        return None
+    
+    try:
+        endpoint = "play/video/hq" if video else "play/audio"
+        media_url = f"{RAILWAY_YT_API_URL}/{endpoint}?id={video_id}"
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.head(media_url, timeout=3) as resp:
+                if resp.status in (200, 206):
+                    logger.info(f"✅ Railway fallback: {video_id}")
+                    return media_url
+    except Exception as e:
+        logger.warning(f"Railway API error: {e}")
+    return None
+
+async def _ytdlp_fallback(link: str, video: bool = False) -> str | None:
+    """Fallback 3: yt-dlp without cookies"""
+    try:
+        opts = {
+            "format": "bestaudio/best" if not video else "bestvideo[height<=720]+bestaudio/best[height<=720]",
+            "quiet": True,
+            "no_warnings": True,
+            "socket_timeout": 10,
+            "retries": 2,
+            "extract_flat": True,
+            "js_runtimes": JS_RUNTIMES,
+            "user_agent": "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36",
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["tv", "ios", "android"],
+                    "skip": ["hls", "dash"]
+                }
+            }
+        }
+        
+        loop = asyncio.get_event_loop()
+        def _run():
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(link, download=False)
+                return info.get("url") or (info.get("formats") or [{}])[0].get("url")
+        
+        url = await asyncio.wait_for(loop.run_in_executor(None, _run), timeout=5)
+        if url:
+            logger.info(f"✅ yt-dlp fallback: {_extract_video_id(link)}")
+            return url
+    except Exception as e:
+        logger.warning(f"yt-dlp fallback error: {e}")
+    return None
+
+# ── Main Stream URL Function ────────────────────────────────────────
+
 async def _get_stream_url(video_id, video=False):
     link = f"https://www.youtube.com/watch?v={video_id}"
     
+    # 1. Check cache
     cached = _get_cached(video_id)
     if cached:
         logger.info(f"⚡ Cache hit: {video_id}")
         return cached
     
+    # 2. Try cookies + yt-dlp (fastest)
     try:
         loop = asyncio.get_event_loop()
         
@@ -144,9 +223,9 @@ async def _get_stream_url(video_id, video=False):
                 "format": "bestaudio/best" if not video else "bestvideo[height<=720]+bestaudio/best[height<=720]",
                 "quiet": True,
                 "no_warnings": True,
-                "socket_timeout": 8,
-                "retries": 2,
-                "sleep_interval": 0.5,
+                "socket_timeout": 15,
+                "retries": 3,
+                "sleep_interval": 1,
                 "extract_flat": True,
                 "js_runtimes": JS_RUNTIMES,
                 "user_agent": "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36",
@@ -159,7 +238,7 @@ async def _get_stream_url(video_id, video=False):
                     opts["cookiefile"] = cookie_file
                     opts["extractor_args"] = {
                         "youtube": {
-                            "player_client": ["mweb"],
+                            "player_client": ["mweb", "tv"],
                             "player_skip": ["webpage", "configs"],
                             "skip": ["hls", "dash"]
                         }
@@ -194,31 +273,35 @@ async def _get_stream_url(video_id, video=False):
                         url = formats[0].get("url")
                 return url
         
-        url = await asyncio.wait_for(loop.run_in_executor(None, _run), timeout=2)
+        url = await asyncio.wait_for(loop.run_in_executor(None, _run), timeout=8)
         if url:
             _cache_url(video_id, url)
-            logger.info(f"⚡ New: {video_id}")
+            logger.info(f"⚡ Cookies: {video_id}")
             return url
-            
     except asyncio.TimeoutError:
         logger.warning(f"⏰ Timeout: {video_id}")
     except Exception as e:
-        logger.warning(f"Error: {e}")
+        logger.warning(f"Cookies error: {e}")
     
-    if RAILWAY_YT_API_URL and RAILWAY_YT_API_KEY:
-        try:
-            endpoint = "play/video/hq" if video else "play/audio"
-            media_url = f"{RAILWAY_YT_API_URL}/{endpoint}?id={video_id}"
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.head(media_url, timeout=1) as resp:
-                    if resp.status in (200, 206):
-                        _cache_url(video_id, media_url)
-                        logger.info(f"⚡ Railway: {video_id}")
-                        return media_url
-        except Exception:
-            pass
+    # 3. SHRUTI API fallback
+    url = await _shruti_fallback(video_id, video)
+    if url:
+        _cache_url(video_id, url)
+        return url
     
+    # 4. Railway API fallback
+    url = await _railway_fallback(video_id, video)
+    if url:
+        _cache_url(video_id, url)
+        return url
+    
+    # 5. yt-dlp without cookies (last resort)
+    url = await _ytdlp_fallback(link, video)
+    if url:
+        _cache_url(video_id, url)
+        return url
+    
+    logger.error(f"❌ All fallbacks failed: {video_id}")
     return None
 
 # ── YouTube Class ───────────────────────────────────────────────────────
@@ -231,7 +314,7 @@ class YouTube:
         self.reg = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
         self.cookies_dir = os.path.join(os.path.dirname(__file__), "..", "cookies")
         self._load_cookies()
-        self.dl_stats = {"total": 0, "cache": 0, "new": 0, "failed": 0}
+        self.dl_stats = {"total": 0, "cache": 0, "cookies": 0, "shruti": 0, "railway": 0, "ytdlp": 0, "failed": 0}
 
     def _load_cookies(self):
         import base64, gzip, re, time
@@ -288,17 +371,12 @@ class YouTube:
 
     async def get_stream_url(self, video_id, video=False, force_cookies=False):
         self.dl_stats["total"] += 1
-        
-        cached = _get_cached(video_id)
-        if cached:
-            self.dl_stats["cache"] += 1
-            return cached
-        
         url = await _get_stream_url(video_id, video)
         if url:
-            self.dl_stats["new"] += 1
+            # Update stats based on source
+            if _get_cached(video_id):
+                self.dl_stats["cache"] += 1
             return url
-        
         self.dl_stats["failed"] += 1
         return None
 
@@ -307,8 +385,8 @@ class YouTube:
             'quiet': True,
             'no_warnings': True,
             'extract_flat': True,
-            'socket_timeout': 3,
-            'retries': 1,
+            'socket_timeout': 5,
+            'retries': 2,
         }
         
         use_cookies = os.environ.get("ALLOW_COOKIE_DOWNLOAD") == "1"
@@ -347,7 +425,6 @@ class YouTube:
                     if not vid:
                         continue
                     duration = r.get('duration', 0)
-                    # FIXED: Float error handle
                     try:
                         duration = int(float(duration)) if duration else 0
                     except (ValueError, TypeError):
@@ -378,7 +455,7 @@ class YouTube:
             link = self.base + link
         link = _normalize_youtube_link(link)
         try:
-            ydl_opts = {'quiet': True, 'no_warnings': True, 'extract_flat': True, 'socket_timeout': 3}
+            ydl_opts = {'quiet': True, 'no_warnings': True, 'extract_flat': True, 'socket_timeout': 5}
             use_cookies = os.environ.get("ALLOW_COOKIE_DOWNLOAD") == "1"
             if use_cookies:
                 cookie_file = cookie_txt_file()
@@ -453,7 +530,7 @@ class YouTube:
         loop = asyncio.get_event_loop()
         
         def _run():
-            opts = {"quiet": True, "no_warnings": True, "extract_flat": True, "socket_timeout": 3}
+            opts = {"quiet": True, "no_warnings": True, "extract_flat": True, "socket_timeout": 5}
             use_cookies = os.environ.get("ALLOW_COOKIE_DOWNLOAD") == "1"
             if use_cookies:
                 cookie_file = cookie_txt_file()
@@ -468,7 +545,7 @@ class YouTube:
             return None
         
         try:
-            r = await asyncio.wait_for(loop.run_in_executor(None, _run), timeout=3)
+            r = await asyncio.wait_for(loop.run_in_executor(None, _run), timeout=5)
         except:
             return None
         
@@ -538,7 +615,7 @@ class YouTube:
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
         except asyncio.TimeoutError:
             proc.kill()
             await proc.wait()
