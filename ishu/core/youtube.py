@@ -1,6 +1,4 @@
-# Copyright (c) 2025 AnonymousX1025
-# Licensed under the MIT License.
-
+# ishu/youtube.py
 import asyncio
 import glob
 import os
@@ -10,13 +8,13 @@ from typing import Union
 
 import aiohttp
 import yt_dlp
-from py_yt import Playlist, VideosSearch
 from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
 
 from ishu import config, logger
 from ishu.helpers import utils
 from ishu.helpers._dataclass import Track
+from ishu.po_token import po_token_gen  # PO Token import
 
 # ── Config ──────────────────────────────────────────────────────────────
 SHRUTI_API_URL = getattr(config, "SHRUTI_API_URL", "https://api.shrutibots.site")
@@ -34,13 +32,25 @@ _DEFAULT_PLAYER_CLIENTS = "tv,ios,android,web_safari,mweb"
 def _with_js_runtime(opts):
     out = dict(opts)
     out["js_runtimes"] = JS_RUNTIMES
-    clients = [c.strip() for c in os.environ.get("YT_PLAYER_CLIENTS", _DEFAULT_PLAYER_CLIENTS).split(",") if c.strip()]
-    if clients:
+    out["user_agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    
+    # PO Token support
+    if os.environ.get("USE_PO_TOKEN"):
         extractor_args = dict(out.get("extractor_args") or {})
         yt_args = dict(extractor_args.get("youtube") or {})
-        yt_args["player_client"] = clients
+        yt_args["player_client"] = ["tv", "ios", "android"]
+        yt_args["player_skip"] = ["webpage", "configs"]
+        # PO Token yahan automatically add ho jayega
         extractor_args["youtube"] = yt_args
         out["extractor_args"] = extractor_args
+    else:
+        out["extractor_args"] = {
+            "youtube": {
+                "player_client": ["tv", "mweb", "web_safari", "android_vr"],
+                "player_skip": ["webpage", "configs"]
+            }
+        }
+    
     proxy = os.environ.get("YTDLP_PROXY")
     if proxy:
         out["proxy"] = proxy
@@ -95,7 +105,15 @@ def _dl_lock(video_id):
         _dl_locks[video_id] = asyncio.Lock()
     return _dl_locks[video_id]
 
-# ── Fast Downloaders ────────────────────────────────────────────────────
+def _format_duration(seconds):
+    if seconds < 60:
+        return f"0:{seconds:02d}"
+    elif seconds < 3600:
+        return f"{seconds//60}:{seconds%60:02d}"
+    else:
+        return f"{seconds//3600}:{(seconds%3600)//60:02d}:{seconds%60:02d}"
+
+# ── Downloaders ────────────────────────────────────────────────────────
 
 async def _cookies_download(link, media_type):
     video_id = _extract_video_id(link) or link
@@ -113,14 +131,31 @@ async def _cookies_download(link, media_type):
             return None
         
         try:
+            # Try PO Token if available
+            po_token = None
+            if os.environ.get("USE_PO_TOKEN"):
+                po_token = po_token_gen.get_token(video_id)
+                if po_token:
+                    logger.info(f"✅ Using PO Token for {video_id}")
+            
             outtmpl = os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s")
             ydl_opts = {
                 "outtmpl": outtmpl,
                 "quiet": True,
                 "no_warnings": True,
                 "cookiefile": cookie,
-                "extractor_args": {"youtube": {"player_client": ["tv", "ios", "android"], "skip": ["dash", "hls"]}}
             }
+            
+            # Add PO Token to extractor args
+            ydl_opts["extractor_args"] = {
+                "youtube": {
+                    "player_client": ["tv", "ios", "android"],
+                    "skip": ["dash", "hls"]
+                }
+            }
+            
+            if po_token:
+                ydl_opts["extractor_args"]["youtube"]["po_token"] = po_token
             
             if media_type == "video":
                 ydl_opts.update({"format": "bestvideo[height<=720]+bestaudio/best[height<=720]", "merge_output_format": "mp4"})
@@ -135,10 +170,10 @@ async def _cookies_download(link, media_type):
             
             result = _resolve_downloaded_file(video_id, ext)
             if result:
-                logger.info(f"Cookies ✓ {video_id}")
+                logger.info(f"✅ Cookies + PO Token ✓ {video_id}")
                 return result
         except Exception as e:
-            logger.warning(f"Cookies failed: {e}")
+            logger.warning(f"⚠️ Cookies failed: {e}")
     return None
 
 async def _ytdlp_nocookie_download(link, media_type):
@@ -174,10 +209,10 @@ async def _ytdlp_nocookie_download(link, media_type):
             
             result = _resolve_downloaded_file(video_id, ext)
             if result:
-                logger.info(f"yt-dlp ✓ {video_id}")
+                logger.info(f"✅ yt-dlp ✓ {video_id}")
                 return result
         except Exception as e:
-            logger.warning(f"yt-dlp failed: {e}")
+            logger.warning(f"⚠️ yt-dlp failed: {e}")
     return None
 
 async def _railway_download(video_id, media_type):
@@ -202,19 +237,19 @@ async def _railway_download(video_id, media_type):
                             async for chunk in resp.content.iter_chunked(1024 * 1024):
                                 f.write(chunk)
                         if os.path.getsize(file_path) > 0:
-                            logger.info(f"Railway ✓ {video_id}")
+                            logger.info(f"✅ Railway ✓ {video_id}")
                             return file_path
     except Exception as e:
-        logger.warning(f"Railway failed: {e}")
+        logger.warning(f"⚠️ Railway failed: {e}")
     return None
 
 async def _download_with_fallback(link, media_type):
     video_id = _extract_video_id(link) or link
     
-    # Priority 1: Cookies
+    # Priority 1: Cookies + PO Token
     result = await _cookies_download(link, media_type)
     if result:
-        return result, "cookies"
+        return result, "cookies_po_token"
     
     # Priority 2: yt-dlp
     result = await _ytdlp_nocookie_download(link, media_type)
@@ -226,7 +261,7 @@ async def _download_with_fallback(link, media_type):
     if result:
         return result, "railway"
     
-    logger.error(f"All methods failed: {video_id}")
+    logger.error(f"❌ All methods failed: {video_id}")
     return None, "none"
 
 async def download_song(link, title=None):
@@ -247,16 +282,30 @@ class YouTube:
         self.reg = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
         self.cookies_dir = os.path.join(os.path.dirname(__file__), "..", "cookies")
         self._load_cookies()
-        self.dl_stats = {"total": 0, "cookies": 0, "ytdlp": 0, "railway": 0, "failed": 0}
+        self.dl_stats = {"total": 0, "cookies_po_token": 0, "ytdlp": 0, "railway": 0, "failed": 0}
 
     def _load_cookies(self):
-        import base64, gzip
+        import base64, gzip, re, time
         
         def _write(decoded, src):
             os.makedirs(self.cookies_dir, exist_ok=True)
-            with open(os.path.join(self.cookies_dir, "cookie_0.txt"), "w") as f:
+            cookie_path = os.path.join(self.cookies_dir, "cookie_0.txt")
+            with open(cookie_path, "w") as f:
                 f.write(decoded)
-            logger.info(f"Loaded cookies from {src}")
+            
+            # Cookie verify karo
+            if "youtube.com" in decoded:
+                now = int(time.time())
+                expired = re.findall(r'\.youtube\.com\s+TRUE\s+/\s+FALSE\s+(\d+)\s+', decoded)
+                if expired:
+                    valid = [e for e in expired if int(e) > now]
+                    logger.info(f"✅ Cookies loaded: {len(valid)}/{len(expired)} valid from {src}")
+                    if not valid:
+                        logger.warning("⚠️ ALL COOKIES EXPIRED! Get fresh cookies.")
+                else:
+                    logger.info(f"✅ Cookies loaded from {src}")
+            else:
+                logger.warning("⚠️ Invalid cookies - no YouTube entries!")
         
         cookies_data = os.environ.get("COOKIES_DATA") or getattr(config, "COOKIES_DATA", None)
         if cookies_data:
@@ -350,34 +399,39 @@ class YouTube:
         return None, None
 
     async def search(self, query, message_id, video=False):
-        avoid = ["remix", "cover", "live", "slowed", "reverb", "extended", "acoustic", "instrumental", "karaoke", "8d"]
-        q = query.strip().lower()
-        explicit = any(k in q for k in avoid)
-        searches = [f"{query} official audio", f"{query} official video", query] if not explicit else [query]
+        """Search using yt-dlp (more reliable)"""
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': True,
+            'extractor_args': {'youtube': {'player_client': ['tv', 'ios', 'android']}}
+        }
         
-        for sq in searches:
-            results = (await VideosSearch(sq, limit=10).next()).get("result", [])
-            filtered = []
-            for r in results:
-                title = r.get("title", "").lower()
-                if not explicit and any(k in title for k in avoid):
-                    continue
-                dur = r.get("duration", "0:00").split(":")
-                secs = int(dur[0]) * 3600 + int(dur[1]) * 60 + int(dur[2]) if len(dur) == 3 else int(dur[0]) * 60 + int(dur[1]) if len(dur) == 2 else 0
-                if 30 <= secs <= 3600:
-                    filtered.append(r)
-            if filtered:
-                r = filtered[0]
-                vid = r["id"]
-                dur = r.get("duration", "00:00")
-                return Track(
-                    id=vid, title=r["title"], url=r.get("link", self.base + vid),
-                    duration=dur, duration_sec=int(utils.to_seconds(dur)) if dur else 0,
-                    thumbnail=r["thumbnails"][0]["url"].split("?")[0],
-                    channel_name=(r.get("channel") or {}).get("name", ""),
-                    message_id=message_id, video=video, time=int(_time.time()),
-                    view_count=(r.get("viewCount") or {}).get("short") if isinstance(r.get("viewCount"), dict) else None
-                )
+        try:
+            with yt_dlp.YoutubeDL(_with_js_runtime(ydl_opts)) as ydl:
+                info = ydl.extract_info(f"ytsearch5:{query}", download=False)
+                results = info.get('entries', [])
+                
+                for r in results:
+                    vid = r.get('id')
+                    if not vid:
+                        continue
+                    duration = r.get('duration', 0)
+                    if 30 <= duration <= 3600:
+                        return Track(
+                            id=vid,
+                            title=r.get('title', 'Unknown'),
+                            url=f"https://youtube.com/watch?v={vid}",
+                            duration=_format_duration(duration),
+                            duration_sec=duration,
+                            thumbnail=f"https://img.youtube.com/vi/{vid}/hqdefault.jpg",
+                            channel_name=r.get('channel', ''),
+                            message_id=message_id,
+                            video=video,
+                            time=int(_time.time())
+                        )
+        except Exception as e:
+            logger.warning(f"Search error: {e}")
         return None
 
     async def get_stream_url(self, video_id, video=False, force_cookies=False):
@@ -402,7 +456,7 @@ class YouTube:
             
             url = await asyncio.wait_for(loop.run_in_executor(None, _run), timeout=25)
             if url:
-                logger.info(f"Stream via {'cookies' if use_cookies else 'yt-dlp'}: {video_id}")
+                logger.info(f"✅ Stream via {'cookies' if use_cookies else 'yt-dlp'}: {video_id}")
                 return url
         except Exception as e:
             logger.warning(f"Stream error: {e}")
@@ -413,7 +467,7 @@ class YouTube:
                 async with aiohttp.ClientSession(headers={"X-API-Key": str(RAILWAY_YT_API_KEY)}) as session:
                     async with session.get(media_url, timeout=aiohttp.ClientTimeout(total=8)) as resp:
                         if resp.status in (200, 206):
-                            logger.info(f"Stream via Railway: {video_id}")
+                            logger.info(f"✅ Stream via Railway: {video_id}")
                             return media_url
             except Exception as e:
                 logger.warning(f"Railway stream error: {e}")
