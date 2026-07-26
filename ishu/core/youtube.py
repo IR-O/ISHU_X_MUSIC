@@ -29,6 +29,25 @@ _dl_locks = {}
 JS_RUNTIMES = {"node": {}}
 _DEFAULT_PLAYER_CLIENTS = "tv,ios,android,web_safari,mweb"
 
+def _format_duration(seconds):
+    """Duration ko MM:SS ya HH:MM:SS mein convert karo - FIXED for float"""
+    try:
+        # Agar float hai toh int mein convert karo
+        if isinstance(seconds, float):
+            seconds = int(seconds)
+        elif isinstance(seconds, str):
+            seconds = int(float(seconds))
+        
+        if seconds < 60:
+            return f"0:{seconds:02d}"
+        elif seconds < 3600:
+            return f"{seconds//60}:{seconds%60:02d}"
+        else:
+            return f"{seconds//3600}:{(seconds%3600)//60:02d}:{seconds%60:02d}"
+    except Exception as e:
+        logger.warning(f"Duration format error: {e}, value: {seconds}")
+        return "0:00"
+
 def _with_js_runtime(opts):
     out = dict(opts)
     out["js_runtimes"] = JS_RUNTIMES
@@ -40,7 +59,6 @@ def _with_js_runtime(opts):
         yt_args = dict(extractor_args.get("youtube") or {})
         yt_args["player_client"] = ["tv", "ios", "android"]
         yt_args["player_skip"] = ["webpage", "configs"]
-        # PO Token yahan automatically add ho jayega
         extractor_args["youtube"] = yt_args
         out["extractor_args"] = extractor_args
     else:
@@ -104,14 +122,6 @@ def _dl_lock(video_id):
     if video_id not in _dl_locks:
         _dl_locks[video_id] = asyncio.Lock()
     return _dl_locks[video_id]
-
-def _format_duration(seconds):
-    if seconds < 60:
-        return f"0:{seconds:02d}"
-    elif seconds < 3600:
-        return f"{seconds//60}:{seconds%60:02d}"
-    else:
-        return f"{seconds//3600}:{(seconds%3600)//60:02d}:{seconds%60:02d}"
 
 # ── Downloaders ────────────────────────────────────────────────────────
 
@@ -399,7 +409,7 @@ class YouTube:
         return None, None
 
     async def search(self, query, message_id, video=False):
-        """Search using yt-dlp (more reliable)"""
+        """Search using yt-dlp (more reliable) - FIXED for float duration"""
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
@@ -417,6 +427,12 @@ class YouTube:
                     if not vid:
                         continue
                     duration = r.get('duration', 0)
+                    # Fix: duration ko int mein convert karo
+                    try:
+                        duration = int(float(duration)) if duration else 0
+                    except (ValueError, TypeError):
+                        duration = 0
+                        
                     if 30 <= duration <= 3600:
                         return Track(
                             id=vid,
@@ -541,6 +557,7 @@ class YouTube:
         return (1, stdout.decode().split("\n")[0]) if stdout else (0, stderr.decode())
 
     async def get_related(self, video_id, message_id):
+        """Get related video - FIXED for float duration"""
         link = self.base + video_id
         loop = asyncio.get_event_loop()
         
@@ -564,9 +581,16 @@ class YouTube:
             return None
         rid = r["id"]
         dur = r.get("duration", "00:00")
+        # Fix: duration ko int mein convert karo
+        try:
+            dur_sec = int(float(dur)) if dur else 0
+        except (ValueError, TypeError):
+            dur_sec = 0
+        dur_str = _format_duration(dur_sec)
+        
         return Track(
             id=rid, title=r.get("title", "Unknown"), url=r.get("url", self.base + rid),
-            duration=dur, duration_sec=int(utils.to_seconds(dur)) if dur else 0,
+            duration=dur_str, duration_sec=dur_sec,
             thumbnail=(r.get("thumbnails") or [{}])[0].get("url", "").split("?")[0],
             channel_name=r.get("channel") or r.get("uploader") or "",
             message_id=message_id, video=False, time=int(_time.time())
