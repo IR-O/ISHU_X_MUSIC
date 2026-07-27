@@ -1,4 +1,4 @@
-# ishu/youtube.py - FINAL ERROR-FREE VERSION
+# ishu/youtube.py - FINAL FIXED
 import asyncio
 import os
 import re
@@ -62,7 +62,7 @@ def cookie_txt_file():
         pass
     return None
 
-# ── Format Duration (Error-Free) ──────────────────────────────────────
+# ── Format Duration ──────────────────────────────────────────────────
 def _format_duration(seconds):
     try:
         if seconds is None:
@@ -82,7 +82,7 @@ def _format_duration(seconds):
     except Exception:
         return "0:00"
 
-# ── Link Helpers (All YouTube Links Supported) ────────────────────────
+# ── Link Helpers ──────────────────────────────────────────────────────
 def _normalize_youtube_link(link, base="https://www.youtube.com/watch?v="):
     if not link:
         return ""
@@ -209,22 +209,28 @@ async def _get_stream_railway(video_id, video=False):
         pass
     return None
 
+# ── Main Get Stream URL (FIXED) ──────────────────────────────────────
 async def _get_stream_url(video_id, video=False):
     cached = _get_cached(video_id)
     if cached:
         return cached
+    
+    # ✅ Create tasks properly
     tasks = [
-        _get_stream_cookies(video_id, video),
-        _get_stream_shruti(video_id, video),
-        _get_stream_railway(video_id, video),
+        asyncio.create_task(_get_stream_cookies(video_id, video)),
+        asyncio.create_task(_get_stream_shruti(video_id, video)),
+        asyncio.create_task(_get_stream_railway(video_id, video)),
     ]
+    
     done, pending = await asyncio.wait(
         tasks,
         timeout=0.45,
         return_when=asyncio.FIRST_COMPLETED
     )
+    
     for task in pending:
         task.cancel()
+    
     for task in done:
         try:
             url = task.result()
@@ -233,6 +239,7 @@ async def _get_stream_url(video_id, video=False):
                 return url
         except Exception:
             pass
+    
     # Last resort: yt-dlp no cookies
     try:
         link = f"https://www.youtube.com/watch?v={video_id}"
@@ -259,6 +266,7 @@ async def _get_stream_url(video_id, video=False):
             return url
     except Exception:
         pass
+    
     return None
 
 # ── YouTube Class ───────────────────────────────────────────────────────
@@ -369,7 +377,6 @@ class YouTube:
                         duration = int(float(duration)) if duration else 0
                     except (ValueError, TypeError):
                         duration = 0
-                    # No upper limit - movies supported
                     if duration >= 30:
                         return Track(
                             id=vid,
@@ -456,7 +463,6 @@ class YouTube:
             return []
 
     async def get_related(self, video_id, message_id):
-        """Autoplay: Get different song"""
         link = self.base + video_id
         loop = asyncio.get_event_loop()
         def _run():
@@ -464,7 +470,7 @@ class YouTube:
                 opts = {
                     "quiet": True,
                     "no_warnings": True,
-                    "extract_flat": False,  # MUST be False for related videos
+                    "extract_flat": False,
                     "socket_timeout": 3,
                     "retries": 1,
                 }
@@ -515,7 +521,6 @@ class YouTube:
         )
 
     async def _get_related_search(self, video_id, message_id):
-        """Fallback: Search for similar song"""
         try:
             link = self.base + video_id
             opts = {"quiet": True, "no_warnings": True, "extract_flat": True, "socket_timeout": 3}
