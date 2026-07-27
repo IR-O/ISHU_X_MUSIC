@@ -111,7 +111,7 @@ class Thumbnail:
 
             # Draw Brand Header on Background
             draw_bg = ImageDraw.Draw(bg)
-            brand_text = "Nishkarsh Kumar"
+            brand_text = "IRO X MUSIC"
 
             brand_bbox = draw_bg.textbbox((0, 0), brand_text, font=font_brand)
             brand_w = brand_bbox[2] - brand_bbox[0]
