@@ -1,4 +1,4 @@
-# ishu/youtube.py - COMPLETE FIXED (All Links + Autoplay + Movies + Audio)
+# ishu/youtube.py - COMPLETE FIXED (All Features)
 import asyncio
 import os
 import re
@@ -222,7 +222,73 @@ async def _ytdlp_fallback(link: str, video: bool = False) -> str | None:
         pass
     return None
 
-# ── Main Stream URL Function (FIXED FOR AUDIO) ──────────────────────
+# ── Genre Match Function ──────────────────────────────────────────────
+def _is_same_genre(title1: str, title2: str) -> bool:
+    """Check if two songs are same genre"""
+    
+    # Soft genre keywords
+    soft_keywords = [
+        "unplugged", "acoustic", "lofi", "slow", "romantic",
+        "love", "sad", "soft", "peaceful", "calm", "gentle",
+        "melody", "soulful", "ballad"
+    ]
+    
+    # DJ/Party genre keywords
+    dj_keywords = [
+        "remix", "dj", "club", "party", "dance", "bass",
+        "electronic", "edm", "house", "techno", "trance",
+        "beat", "pump", "energy", "festival"
+    ]
+    
+    # Rock genre keywords
+    rock_keywords = [
+        "rock", "metal", "punk", "alternative", "hard",
+        "heavy", "guitar", "band", "live", "concert"
+    ]
+    
+    # Pop genre keywords
+    pop_keywords = [
+        "pop", "top", "hit", "chart", "trending", "viral",
+        "mainstream", "popular", "best", "new"
+    ]
+    
+    def get_genre(title):
+        title = title.lower()
+        
+        # Check DJ keywords first (most specific)
+        for kw in dj_keywords:
+            if kw in title:
+                return "dj"
+        
+        # Check Soft keywords
+        for kw in soft_keywords:
+            if kw in title:
+                return "soft"
+        
+        # Check Rock keywords
+        for kw in rock_keywords:
+            if kw in title:
+                return "rock"
+        
+        # Check Pop keywords
+        for kw in pop_keywords:
+            if kw in title:
+                return "pop"
+        
+        # If no match, return "unknown"
+        return "unknown"
+    
+    # Compare genres
+    genre1 = get_genre(title1)
+    genre2 = get_genre(title2)
+    
+    # If both unknown, consider them same
+    if genre1 == "unknown" and genre2 == "unknown":
+        return True
+    
+    return genre1 == genre2
+
+# ── Main Stream URL Function ────────────────────────────────────────
 async def _get_stream_url(video_id, video=False):
     link = f"https://www.youtube.com/watch?v={video_id}"
     
@@ -231,17 +297,17 @@ async def _get_stream_url(video_id, video=False):
         logger.info(f"⚡ Cache: {video_id}")
         return cached
     
-    # ✅ Primary: Force audio format
+    # ✅ Primary: Force bestaudio
     try:
         loop = asyncio.get_event_loop()
         def _run():
             opts = {
-                "format": "251/bestaudio/best",  # ✅ Force audio
+                "format": "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best",
                 "quiet": True,
                 "no_warnings": True,
                 "socket_timeout": 10,
                 "retries": 2,
-                "extract_flat": True,
+                "extract_flat": False,
                 "js_runtimes": JS_RUNTIMES,
                 "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
                 "extractor_args": {
@@ -263,7 +329,6 @@ async def _get_stream_url(video_id, video=False):
                 url = info.get("url")
                 if not url:
                     formats = info.get("formats") or []
-                    # Prefer audio-only formats
                     for f in formats:
                         if f.get("acodec") != "none" and f.get("vcodec") == "none":
                             url = f.get("url")
@@ -272,7 +337,7 @@ async def _get_stream_url(video_id, video=False):
                         url = formats[0].get("url")
                 return url
         
-        url = await asyncio.wait_for(loop.run_in_executor(None, _run), timeout=8)
+        url = await asyncio.wait_for(loop.run_in_executor(None, _run), timeout=10)
         if url:
             _cache_url(video_id, url)
             logger.info(f"⚡ Audio: {video_id}")
@@ -282,22 +347,22 @@ async def _get_stream_url(video_id, video=False):
     except Exception as e:
         logger.warning(f"Audio error: {e}")
     
-    # ✅ Fallback: Another audio format
+    # ✅ Fallback: itag 251 (Opus)
     try:
         loop = asyncio.get_event_loop()
         def _run():
             opts = {
-                "format": "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best",
+                "format": "251",
                 "quiet": True,
                 "no_warnings": True,
                 "socket_timeout": 10,
                 "retries": 2,
-                "extract_flat": True,
+                "extract_flat": False,
                 "js_runtimes": JS_RUNTIMES,
+                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
                 "extractor_args": {
                     "youtube": {
-                        "player_client": ["mweb"],
-                        "player_skip": ["webpage", "configs"],
+                        "player_client": ["tv"],
                         "skip": ["hls", "dash"]
                     }
                 }
@@ -315,10 +380,10 @@ async def _get_stream_url(video_id, video=False):
         url = await asyncio.wait_for(loop.run_in_executor(None, _run), timeout=8)
         if url:
             _cache_url(video_id, url)
-            logger.info(f"⚡ Audio fallback: {video_id}")
+            logger.info(f"⚡ Opus: {video_id}")
             return url
     except Exception as e:
-        logger.warning(f"Audio fallback error: {e}")
+        logger.warning(f"Opus error: {e}")
     
     # 3. SHRUTI API fallback
     url = await _shruti_fallback(video_id, video)
@@ -403,16 +468,68 @@ class YouTube:
         return not self.valid(url)
 
     async def get_stream_url(self, video_id, video=False, force_cookies=False):
+        """✅ FIXED: Force audio format for NoAudioSourceFound"""
         self.dl_stats["total"] += 1
+        
         cached = _get_cached(video_id)
         if cached:
             self.dl_stats["cache"] += 1
             return cached
+        
+        link = f"https://www.youtube.com/watch?v={video_id}"
+        
+        # ✅ Primary: Force bestaudio
+        try:
+            loop = asyncio.get_event_loop()
+            def _run():
+                try:
+                    opts = {
+                        "format": "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best",
+                        "quiet": True,
+                        "no_warnings": True,
+                        "socket_timeout": 10,
+                        "retries": 2,
+                        "extract_flat": False,
+                        "js_runtimes": JS_RUNTIMES,
+                        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+                        "extractor_args": {
+                            "youtube": {
+                                "player_client": ["mweb"],
+                                "player_skip": ["webpage", "configs"],
+                                "skip": ["hls", "dash"]
+                            }
+                        }
+                    }
+                    cookie_file = cookie_txt_file()
+                    if cookie_file and os.path.exists(cookie_file) and os.environ.get("ALLOW_COOKIE_DOWNLOAD") == "1":
+                        opts["cookiefile"] = cookie_file
+                    
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        info = ydl.extract_info(link, download=False)
+                        url = info.get("url")
+                        if not url:
+                            formats = info.get("formats") or []
+                            for f in formats:
+                                if f.get("acodec") != "none" and f.get("vcodec") == "none":
+                                    url = f.get("url")
+                                    break
+                        return url
+                except Exception:
+                    return None
+            
+            url = await asyncio.wait_for(loop.run_in_executor(None, _run), timeout=10)
+            if url:
+                _cache_url(video_id, url)
+                logger.info(f"⚡ Audio: {video_id}")
+                return url
+        except Exception as e:
+            logger.warning(f"Audio error: {e}")
+        
+        # ✅ Fallback: Full extraction
         url = await _get_stream_url(video_id, video)
         if url:
-            if _get_cached(video_id):
-                self.dl_stats["cache"] += 1
             return url
+        
         self.dl_stats["failed"] += 1
         return None
 
@@ -554,52 +671,68 @@ class YouTube:
             return []
 
     async def get_related(self, video_id, message_id):
+        """✅ FIXED: Returns different song with genre match"""
         link = self.base + video_id
         loop = asyncio.get_event_loop()
+        
         def _run():
             try:
-                opts = {
-                    "quiet": True,
-                    "no_warnings": True,
-                    "extract_flat": False,
-                    "socket_timeout": 5,
-                    "retries": 1,
-                }
+                # IMPORTANT: extract_flat=False to get related videos
+                opts = {"quiet": True, "no_warnings": True, "extract_flat": False, "socket_timeout": 5}
                 use_cookies = os.environ.get("ALLOW_COOKIE_DOWNLOAD") == "1"
                 if use_cookies:
                     cookie_file = cookie_txt_file()
                     if cookie_file and os.path.exists(cookie_file):
                         opts["cookiefile"] = cookie_file
+                
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(link, download=False) or {}
                     related = info.get("related_videos") or []
+                    
+                    # ✅ Pehle current song ka title lo
+                    current_title = info.get("title", "").lower()
+                    
+                    # ✅ Related videos mein se different song dhoondo
                     for r in related:
                         rid = r.get("id")
                         if not rid or rid == video_id:
-                            continue
+                            continue  # Skip same video
                         if "list=" in (r.get("url") or ""):
-                            continue
+                            continue  # Skip playlists
                         if r.get("duration") is None and not r.get("title"):
-                            continue
-                        return r
+                            continue  # Skip invalid entries
+                        
+                        # ✅ Genre match karo (soft → soft, DJ → DJ)
+                        r_title = r.get("title", "").lower()
+                        if _is_same_genre(current_title, r_title):
+                            return r
+                    
+                    # ✅ Agar koi genre match na ho toh koi bhi different song
+                    for r in related:
+                        rid = r.get("id")
+                        if rid and rid != video_id and "list=" not in (r.get("url") or ""):
+                            return r
+                    
                     return None
             except Exception:
                 return None
+        
         try:
             r = await asyncio.wait_for(loop.run_in_executor(None, _run), timeout=5)
-        except Exception:
+        except:
             r = None
+        
         if not r:
-            return await self._get_related_search(video_id, message_id)
-        rid = r.get("id")
-        if not rid or rid == video_id:
             return None
+        
+        rid = r["id"]
         dur = r.get("duration", 0)
         try:
             dur_sec = int(float(dur)) if dur else 0
         except (ValueError, TypeError):
             dur_sec = 0
         dur_str = _format_duration(dur_sec)
+        
         return Track(
             id=rid,
             title=r.get("title", "Unknown"),
