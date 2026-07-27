@@ -1,5 +1,6 @@
-# ishu/youtube.py - FINAL FIXED
+# ishu/youtube.py - MEMORY OPTIMIZED + COOKIES FIXED
 import asyncio
+import gc
 import os
 import re
 import time as _time
@@ -133,15 +134,15 @@ async def _get_stream_cookies(video_id, video=False):
                     "format": "bestaudio/best" if not video else "bestvideo[height<=720]+bestaudio/best[height<=720]",
                     "quiet": True,
                     "no_warnings": True,
-                    "socket_timeout": 2,
-                    "retries": 0,
-                    "sleep_interval": 0,
+                    "socket_timeout": 3,
+                    "retries": 1,
+                    "sleep_interval": 1,
                     "extract_flat": True,
                     "js_runtimes": JS_RUNTIMES,
-                    "user_agent": "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36",
+                    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
                     "extractor_args": {
                         "youtube": {
-                            "player_client": ["mweb"],
+                            "player_client": ["mweb", "tv"],
                             "player_skip": ["webpage", "configs"],
                             "skip": ["hls", "dash"]
                         }
@@ -168,7 +169,7 @@ async def _get_stream_cookies(video_id, video=False):
                     return url
             except Exception:
                 return None
-        return await asyncio.wait_for(loop.run_in_executor(None, _run), timeout=1.5)
+        return await asyncio.wait_for(loop.run_in_executor(None, _run), timeout=3)
     except Exception:
         return None
 
@@ -209,13 +210,12 @@ async def _get_stream_railway(video_id, video=False):
         pass
     return None
 
-# ── Main Get Stream URL (FIXED) ──────────────────────────────────────
+# ── Main Get Stream URL (MEMORY OPTIMIZED) ──────────────────────────
 async def _get_stream_url(video_id, video=False):
     cached = _get_cached(video_id)
     if cached:
         return cached
     
-    # ✅ Create tasks properly
     tasks = [
         asyncio.create_task(_get_stream_cookies(video_id, video)),
         asyncio.create_task(_get_stream_shruti(video_id, video)),
@@ -236,6 +236,7 @@ async def _get_stream_url(video_id, video=False):
             url = task.result()
             if url:
                 _cache_url(video_id, url)
+                gc.collect()
                 return url
         except Exception:
             pass
@@ -250,6 +251,7 @@ async def _get_stream_url(video_id, video=False):
             "socket_timeout": 2,
             "retries": 0,
             "extract_flat": True,
+            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
             "extractor_args": {"youtube": {"player_client": ["tv"], "skip": ["hls", "dash"]}}
         }
         loop = asyncio.get_event_loop()
@@ -263,10 +265,12 @@ async def _get_stream_url(video_id, video=False):
         url = await asyncio.wait_for(loop.run_in_executor(None, _run), timeout=1.5)
         if url:
             _cache_url(video_id, url)
+            gc.collect()
             return url
     except Exception:
         pass
     
+    gc.collect()
     return None
 
 # ── YouTube Class ───────────────────────────────────────────────────────
@@ -360,6 +364,7 @@ class YouTube:
                 'extract_flat': True,
                 'socket_timeout': 1.5,
                 'retries': 0,
+                'user_agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
                 'extractor_args': {'youtube': {'player_client': ['mweb'], 'skip': ['hls', 'dash']}}
             }
             cookie_file = cookie_txt_file()
@@ -378,6 +383,7 @@ class YouTube:
                     except (ValueError, TypeError):
                         duration = 0
                     if duration >= 30:
+                        gc.collect()
                         return Track(
                             id=vid,
                             title=r.get('title', 'Unknown'),
@@ -392,6 +398,7 @@ class YouTube:
                         )
         except Exception:
             pass
+        gc.collect()
         return None
 
     async def download(self, video_id, video=False, title=None):
@@ -473,6 +480,7 @@ class YouTube:
                     "extract_flat": False,
                     "socket_timeout": 3,
                     "retries": 1,
+                    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
                 }
                 cookie_file = cookie_txt_file()
                 if cookie_file and os.path.exists(cookie_file):
@@ -507,6 +515,7 @@ class YouTube:
         except (ValueError, TypeError):
             dur_sec = 0
         dur_str = _format_duration(dur_sec)
+        gc.collect()
         return Track(
             id=rid,
             title=r.get("title", "Unknown"),
@@ -539,6 +548,7 @@ class YouTube:
                 "extract_flat": True,
                 "socket_timeout": 3,
                 "retries": 1,
+                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
                 "extractor_args": {"youtube": {"player_client": ["mweb"], "skip": ["hls", "dash"]}}
             }
             if cookie_file and os.path.exists(cookie_file):
@@ -557,6 +567,7 @@ class YouTube:
                         dur_sec = 0
                     if 30 <= dur_sec <= 3600:
                         dur_str = _format_duration(dur_sec)
+                        gc.collect()
                         return Track(
                             id=rid,
                             title=r.get("title", "Unknown"),
@@ -571,6 +582,7 @@ class YouTube:
                         )
         except Exception:
             pass
+        gc.collect()
         return None
 
     async def exists(self, link, videoid=None):
